@@ -19,7 +19,7 @@ if ! [ $(command -v hcana) ]; then
 fi
 
 # Replay the run
-runHcana="./hcana -q \"$script($run,$evt)\""
+runHcana="hcana -q \"$script($run,$evt)\""
 cd $hallc_replay_dir
 echo pwd: $(pwd)
 echo $runHcana
