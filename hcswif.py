@@ -404,7 +404,7 @@ def addCommonJobInfo(workflow, parsed_args):
         job['stderr'] = os.path.join(out_dir, job['name'] + '.err')
 
         # TODO: Allow user to specify all of these parameters
-        job['os'] = 'centos77'
+        job['os'] = 'centos79'
         job['track'] = 'analysis'
         job['diskBytes'] = disk_bytes
         job['ramBytes'] = ram_bytes
