@@ -14,22 +14,25 @@ import warnings
 # Define environment
 
 # Where do you want your job output (json files, stdout, stderr)?
-out_dir = os.path.join('/lustre/expphy/volatile/hallc/xem2/', getpass.getuser() , 'hcswif/output')
+std_out = os.path.join('/farm_out/', getpass.getuser() , 'hallc_replay_XEM_STDOUT/')
+std_err = os.path.join('/farm_out/', getpass.getuser() , 'hallc_replay_XEM_STDERR/')
 json_dir = os.path.join('/group/c-xem2/software/hcswif/jsons')
-if not os.path.isdir(out_dir):
-    warnings.warn('out_dir: ' + out_dir + ' does not exist')
+if not os.path.isdir(std_out):
+    warnings.warn('std_out: ' + std_out + ' does not exist')
+if not os.path.isdir(std_err):
+    warnings.warn('std_err: ' + std_err + ' does not exist')
 if not os.path.isdir(json_dir):
     warnings.warn('json_dir: ' + json_dir + ' does not exist')
 
 # Where is your raw data?
-raw_dir      = '/to/be/set/raw'
+sp22_raw_dir = '/to/be/set/raw'
 sp18_raw_dir = '/mss/hallc/spring17/raw'
 sp19_raw_dir = '/mss/hallc/jpsi-007/raw'
-if not os.path.isdir(raw_dir):
-    warnings.warn('raw_dir: ' + raw_dir + ' does not exist')
-if not os.path.isdir(jpsi_sp18_raw_dir):
+if not os.path.isdir(sp22_raw_dir):
+    warnings.warn('raw_dir: ' + sp22_raw_dir + ' does not exist')
+if not os.path.isdir(sp18_raw_dir):
     warnings.warn('raw_dir: ' + sp18_raw_dir + ' does not exist')
-if not os.path.isdir(jpsi_sp19_raw_dir):
+if not os.path.isdir(sp19_raw_dir):
     warnings.warn('raw_dir: ' + sp19_raw_dir + ' does not exist')
 
 # Where is hcswif?
@@ -222,10 +225,10 @@ def getReplayJobs(parsed_args, wf_name):
             # otherwise hms_all_XXXXX or shms_all_XXXXX
             coda_stem = spectrometer.lower() + '_all_' + str(run).zfill(5)
 
-        if((run > 11000 and 'shms' in spectrometer.lower()) : 
-           coda = os.path.join(raw_dir, coda_stem + '.dat')
-        elif((run > 4000 and 'hms' in spectrometer.lower()) : 
-           coda = os.path.join(raw_dir, coda_stem + '.dat')
+        if (run > 11000 and 'shms' in spectrometer.lower()) : 
+           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
+        elif (run > 4000 and 'hms' in spectrometer.lower()) : 
+           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
         elif (run > 7000 and 'shms' in spectrometer.lower()) : 
              coda = os.path.join(sp19_raw_dir, coda_stem + '.dat')
         else: 
@@ -400,8 +403,8 @@ def addCommonJobInfo(workflow, parsed_args):
 
         job['account'] = account
 
-        job['stdout'] = os.path.join(out_dir, job['name'] + '.out')
-        job['stderr'] = os.path.join(out_dir, job['name'] + '.err')
+        job['stdout'] = os.path.join(std_out, job['name'] + '.out')
+        job['stderr'] = os.path.join(std_err, job['name'] + '.err')
 
         # TODO: Allow user to specify all of these parameters
         job['constraint'] = 'centos79'
