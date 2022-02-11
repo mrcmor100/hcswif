@@ -2,4 +2,5 @@ output
 *.json
 *.err
 *.out
-run-lists/
+run-lists/*.dat
+run-lists/*.txt
