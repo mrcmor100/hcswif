@@ -55,7 +55,7 @@ def parseArgs():
     parser.add_argument('--mode', nargs=1, dest='mode',
             help='type of workflow (replay or command)')
     parser.add_argument('--spectrometer', nargs=1, dest='spectrometer',
-            help='spectrometer to analyze (HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, COIN, HMS_COIN, SHMS_COIN, HMS_SCALER, SHMS_SCALER)')
+                        help='spectrometer to analyze (HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, COIN, HMS_COIN, HMS_COIN_ALL, SHMS_COIN, SHMS_COIN_ALL, HMS_SCALER, SHMS_SCALER, COIN_SCALER, COIN_hE_pP, COIN_pE_hP)')
     parser.add_argument('--run', nargs='+', dest='run',
             help='a list of run numbers and ranges; or a file listing run numbers')
     parser.add_argument('--events', nargs=1, dest='events',
@@ -124,8 +124,8 @@ def initializeWorkflow(parsed_args):
 def getReplayJobs(parsed_args, wf_name):
     # Spectrometer
     spectrometer = parsed_args.spectrometer[0]
-    if spectrometer.upper() not in ['HMS_ALL', 'SHMS_ALL', 'HMS_PROD', 'SHMS_PROD', 'COIN', 'HMS_COIN', 'SHMS_COIN', 'HMS_SCALER', 'SHMS_SCALER']:
-        raise ValueError('Spectrometer must be HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, COIN, HMS_COIN, SHMS_COIN, HMS_SCALER, or SHMS_SCALER')
+    if spectrometer.upper() not in ['HMS_ALL', 'SHMS_ALL', 'HMS_PROD', 'SHMS_PROD', 'COIN', 'HMS_COIN', 'HMS_COIN_ALL', 'SHMS_COIN', 'SHMS_COIN_ALL', 'HMS_SCALER', 'SHMS_SCALER', 'COIN_SCALER', 'COIN_PE_HP', 'COIN_HE_PP']:
+        raise ValueError('Spectrometer must be HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, COIN, HMS_COIN, HMS_COIN_ALL, SHMS_COIN, SHMS_COIN_ALL, HMS_SCALER, COIN_SCALER, SHMS_SCALER, COIN_pE_hP or COIN_hE_pP')
 
     # Run(s)
     if parsed_args.run==None:
@@ -156,9 +156,14 @@ def getReplayJobs(parsed_args, wf_name):
                             'HMS_PROD'    : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
                             'SHMS_PROD'   : 'SCRIPTS/SHMS/PRODUCTION/replay_production_shms.C',
                             'HMS_COIN'    : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
+                            'HMS_COIN_ALL' : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin_all.C',
                             'SHMS_COIN'   : 'SCRIPTS/SHMS/PRODUCTION/replay_production_shms_coin.C',
+                            'SHMS_COIN_ALL' : 'SCRIPTS/SHMS/PRODUCTION/replay_production_shms_coin_all.C',
+                            'COIN_HE_PP' : 'SCRIPTS/COIN/PRODUCTION/replay_production_coin_hElec_pProt.C',
+                            'COIN_PE_HP' : 'SCRIPTS/COIN/PRODUCTION/replay_production_coin_pElec_hProt.C',
                             'HMS_SCALER'  : 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
-                            'SHMS_SCALER' : 'SCRIPTS/SHMS/SCALERS/replay_shms_scalers.C' }
+                            'SHMS_SCALER' : 'SCRIPTS/SHMS/SCALERS/replay_shms_scalers.C',
+                            'COIN_SCALER' : 'SCRIPTS/COIN/SCALERS/replay_coin_scalers.C'}
             replay_script = script_dict[spectrometer.upper()]
     # User specified a script so we use that one
     else:
@@ -177,8 +182,6 @@ def getReplayJobs(parsed_args, wf_name):
         batch = os.path.join(hcswif_dir, 'hcswif.sh')
     elif re.search('bash', parsed_args.shell[0]):
         batch = os.path.join(hcswif_dir, 'hcswif.sh')
-    elif re.search('csh', parsed_args.shell[0]):
-        batch = os.path.join(hcswif_dir, 'hcswif.csh')
 
     # Create list of jobs for workflow
     jobs = []
