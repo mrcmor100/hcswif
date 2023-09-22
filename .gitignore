@@ -4,3 +4,6 @@ output
 *.out
 run-lists/*.dat
 run-lists/*.txt
+run-lists/*/
+.ipynb_checkpoints/
+*~

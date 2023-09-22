@@ -14,9 +14,11 @@ import warnings
 # Define environment
 
 # Where do you want your job output (json files, stdout, stderr)?
-std_out = os.path.join('/farm_out/', getpass.getuser() , 'hallc_replay_XEM_STDOUT/')
-std_err = os.path.join('/farm_out/', getpass.getuser() , 'hallc_replay_XEM_STDERR/')
-json_dir = os.path.join('/group/c-xem2/software/hcswif/jsons')
+std_out = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stdout/')
+std_err = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stderr/')
+json_dir = os.path.join('/group/nps/cmorean/hcswif/jsons')
+tape_out = os.path.join('/mss/hallc/c-nps/analysis/online/replays/')
+voli_path = os.path.join('/volatile/hallc/nps/', getpass.getuser())
 if not os.path.isdir(std_out):
     warnings.warn('std_out: ' + std_out + ' does not exist')
 if not os.path.isdir(std_err):
@@ -25,15 +27,21 @@ if not os.path.isdir(json_dir):
     warnings.warn('json_dir: ' + json_dir + ' does not exist')
 
 # Where is your raw data?
-sp22_raw_dir = '/to/be/set/raw'
+sp22_raw_dir = '/mss/hallc/xem2/raw'
 sp18_raw_dir = '/mss/hallc/spring17/raw'
 sp19_raw_dir = '/mss/hallc/jpsi-007/raw'
+cafe_raw_dir = '/mss/hallc/c-cafe-2022/raw'
+nps_raw_dir  = '/mss/hallc/c-nps/raw'
 if not os.path.isdir(sp22_raw_dir):
     warnings.warn('raw_dir: ' + sp22_raw_dir + ' does not exist')
 if not os.path.isdir(sp18_raw_dir):
     warnings.warn('raw_dir: ' + sp18_raw_dir + ' does not exist')
 if not os.path.isdir(sp19_raw_dir):
     warnings.warn('raw_dir: ' + sp19_raw_dir + ' does not exist')
+if not os.path.isdir(cafe_raw_dir):
+    warnings.warn('raw_dir: ' + cafe_raw_dir + ' does not exist')
+if not os.path.isdir(nps_raw_dir):
+    warnings.warn('raw_dir: ' + nps_raw_dir + ' does not exist')
 
 # Where is hcswif?
 hcswif_dir = os.path.dirname(os.path.realpath(__file__))
@@ -64,7 +72,7 @@ def parseArgs():
     parser.add_argument('--mode', nargs=1, dest='mode',
             help='type of workflow (replay or command)')
     parser.add_argument('--spectrometer', nargs=1, dest='spectrometer',
-                        help='spectrometer to analyze (HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, COIN, HMS_COIN, SHMS_COIN, HMS_SCALER, SHMS_SCALER, SHMS_SETPED, HMS_SETPED, SHMS_NOWINDOWS)')
+                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
     parser.add_argument('--run', nargs='+', dest='run',
             help='a list of run numbers and ranges; or a file listing run numbers')
     parser.add_argument('--events', nargs=1, dest='events',
@@ -89,6 +97,8 @@ def parseArgs():
             help='max run time per job in seconds allowed before killing jobs')
     parser.add_argument('--shell', nargs=1, dest='shell',
             help='Currently a shell cannot be specified in SWIF2')
+    parser.add_argument('--to_mss', nargs=1, dest='to_mss',
+            help='Write the output to mss, default is false')
 
     # Check if any args specified
     if len(sys.argv) < 2:
@@ -133,45 +143,28 @@ def initializeWorkflow(parsed_args):
 def getReplayJobs(parsed_args, wf_name):
     # Spectrometer
     spectrometer = parsed_args.spectrometer[0]
-    if spectrometer.upper() not in ['HMS_ALL', 'SHMS_ALL', 'HMS_PROD', 'SHMS_PROD', 'SHMS_NOWINDOWS', 'SHMS_SETPED', 'HMS_SETPED', 'COIN', 'HMS_COIN', 'SHMS_COIN', 'HMS_SCALER', 'SHMS_SCALER']:
-        raise ValueError('Spectrometer must be HMS_ALL, SHMS_ALL, HMS_PROD, SHMS_PROD, SHMS_NOWINDOWS, COIN, HMS_COIN, SHMS_COIN, HMS_SCALER, or SHMS_SCALER')
+    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
+        raise ValueError('Spectrometer must be HMS_ALL', 'NPS_ALL, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
 
     # Run(s)
     if parsed_args.run==None:
         raise RuntimeError('Must specify run(s) to process')
     else:
-        runs = getReplayRuns(parsed_args.run)
+        runs = getReplayRuns(parsed_args.run, parsed_args.disk)
 
     # Replay script to use
     if parsed_args.replay==None:
         # User has not specified a script, so we provide them with default options
-
-        # COIN has two options: hElec_pProt or pElec_hProt depending on
-        # the spectrometer configuration
-        if spectrometer.upper() == 'COIN':
-            print('COIN replay script depends on spectrometer configuration.')
-            print('1) HMS=e, SHMS=p (SCRIPTS/COIN/PRODUCTION/replay_production_coin_hElec_pProt.C)')
-            print('2) HMS=p, SHMS=e (SCRIPTS/COIN/PRODUCTION/replay_production_coin_pElec_hProt.C)')
-            replay_script = input("Enter 1 or 2: ")
-
-            script_dict = { '1' : 'SCRIPTS/COIN/PRODUCTION/replay_production_coin_hElec_pProt.C',
-                            '2' : 'SCRIPTS/COIN/PRODUCTION/replay_production_coin_pElec_hProt.C' }
-            replay_script = script_dict[replay_script]
-
-        # We have 4 options for singles replay; "real" singles or "coin" singles
-        else:
-            script_dict = { 'HMS_ALL'        : 'SCRIPTS/HMS/PRODUCTION/replay_production_all_hms.C',
-                            'SHMS_ALL'       : 'SCRIPTS/SHMS/PRODUCTION/replay_production_all_shms.C',
-                            'HMS_PROD'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
-                            'HMS_SETPED'     : 'SCRIPTS/HMS/TIMING/replay_setPedDefault_hms.C',
-                            'SHMS_PROD'      : 'SCRIPTS/SHMS/PRODUCTION/replay_production_shms.C',
-                            'SHMS_NOWINDOWS' : 'SCRIPTS/SHMS/TIMING/replay_no_timing_windows_shms.C',
-                            'HMS_COIN'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
-                            'SHMS_COIN'      : 'SCRIPTS/SHMS/PRODUCTION/replay_production_shms_coin.C',
-                            'HMS_SCALER'     : 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
-                            'SHMS_SCALER'    : 'SCRIPTS/SHMS/SCALERS/replay_shms_scalers.C',
-                            'SHMS_SETPED'    : 'SCRIPTS/SHMS/TIMING/replay_setPedDefault_shms.C',}
-            replay_script = script_dict[spectrometer.upper()]
+        script_dict = { 'HMS_ALL'        : 'SCRIPTS/HMS/PRODUCTION/replay_production_all_hms.C',
+                        'NPS_ALL'       : '',
+                        'HMS_PROD'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
+                        'NPS_PROD'      : '',
+                        'HMS_COIN'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
+                        'NPS_COIN'      : 'SCRIPTS/NPS/replay_production_coin_NPS_HMS.C',
+                        'NPS_COIN_SCALER'      : '',
+                        'HMS_SCALER'     : 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
+                        'NPS_SCALER'    : ''}
+        replay_script = script_dict[spectrometer.upper()]
     # User specified a script so we use that one
     else:
         replay_script = parsed_args.replay[0]
@@ -186,74 +179,119 @@ def getReplayJobs(parsed_args, wf_name):
 
     # Which hcswif shell script should we use? bash or csh?
     if parsed_args.shell==None:
-        batch = os.path.join(hcswif_dir, 'hcswif.sh')
+        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
     elif re.search('bash', parsed_args.shell[0]):
-        batch = os.path.join(hcswif_dir, 'hcswif.sh')
+        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
     elif re.search('csh', parsed_args.shell[0]):
         batch = os.path.join(hcswif_dir, 'hcswif.csh')
 
     # Create list of jobs for workflow
     jobs = []
+
     for run in runs:
         job = {}
 
         # Assume coda stem looks like shms_all_XXXXX, hms_all_XXXXX, or coin_all_XXXXX
         if 'coin' in spectrometer.lower():
             # shms_coin and hms_coin use same coda files as coin
-            coda_stem = 'coin_all_' + str(run).zfill(5)
+            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
         elif 'all' in spectrometer.lower():
             # otherwise hms_all_XXXXX or shms_all_XXXXX
             all_spec  = spectrometer.replace('_ALL', '')
-            coda_stem = all_spec.lower() + '_all_' + str(run).zfill(5)
+            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
         elif 'prod' in spectrometer.lower():
             # otherwise hms_all_XXXXX or shms_all_XXXXX
             prod_spec = spectrometer.replace('_PROD', '')
-            coda_stem = prod_spec.lower() + '_all_' + str(run).zfill(5)
-        elif 'setped' in spectrometer.lower():
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            prod_spec = spectrometer.replace('_SETPED', '')
-            coda_stem = prod_spec.lower() + '_all_' + str(run).zfill(5)
-        elif 'nowindows' in spectrometer.lower():
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            prod_spec = spectrometer.replace('_NOWINDOWS', '')
-            coda_stem = prod_spec.lower() + '_all_' + str(run).zfill(5)
+            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
         elif 'scaler' in spectrometer.lower():
             # otherwise hms_all_XXXXX or shms_all_XXXXX
             scaler_spec = spectrometer.replace('_SCALER', '')
-            coda_stem   = scaler_spec.lower() + '_all_' + str(run).zfill(5)
+            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
         else:
             # otherwise hms_all_XXXXX or shms_all_XXXXX
-            coda_stem = spectrometer.lower() + '_all_' + str(run).zfill(5)
+            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
 
-        if (run > 11000 and 'shms' in spectrometer.lower()) : 
-           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
-        elif (run > 4000 and 'hms' in spectrometer.lower()) : 
-           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
-        elif (run > 7000 and 'shms' in spectrometer.lower()) : 
-             coda = os.path.join(sp19_raw_dir, coda_stem + '.dat')
-        else: 
-             coda = os.path.join(sp18_raw_dir, coda_stem + '.dat')
+#        if (run[0] > 11000 and 'shms' in spectrometer.lower()) : 
+#           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
+#        elif (run[0] > 4000 and 'hms' in spectrometer.lower()) : 
+#           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
+        #if(run[0]>4300 and run[0] < 16940 and 'hms' in spectrometer.lower()):
+            #coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
+        #elif (run[0] > 16940 and run[0] < 17144 and 'hms' in spectrometer.lower()) : 
+            #These are all COIN run[0]s.
+            #coda_stem = 'shms_all_' + str(run[0]).zfill(5)
+            #coda = os.path.join(cafe_raw_dir, coda_stem + '.dat')
 
         # Check if raw data file exist
+        coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(run[2]))
         if not os.path.isfile(coda):
             warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
-            continue
+            #continue
 
-        job['name'] =  wf_name + '_' + coda_stem
-        job['inputs'] = [{}]
+            #TODO: Fix collision between HMS rootfile names
+        output_dict = { 'HMS_ALL'             : 'ROOTfiles/hms_replay_production_all_%d_%d_%d.root',
+                        'NPS_ALL'                : '',
+                        'HMS_PROD'               : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
+                        'NPS_PROD'             : '',
+                        'HMS_COIN'       : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
+                        'NPS_COIN'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
+                        'NPS_COIN_SCALER' : '',
+                        'HMS_SCALER'           : 'ROOTfiles/HMS/SCALARS/hms_replay_scalars_%d_%d_%d.root',
+                        'NPS_SCALER'          : ''}
+        script_output = output_dict[spectrometer.upper()]
+
+        #No output tape path determined yet.
+        output_path_dict = { 'HMS_ALL'    : '',
+                             'NPS_ALL'                : '',
+                             'HMS_PROD'               : '',
+                             'NPS_PROD'             : '',
+                             'HMS_COIN'               : '',
+                             'NPS_COIN'             : '',
+                             'NPS_COIN_SCALER' : '',
+                             'HMS_SCALER'            : '',
+                             'NPS_SCALER'          : ''}
+        output_path = output_path_dict[spectrometer.upper()]
+
+        if parsed_args.to_mss==None:
+            to_mss = False
+        elif parsed_args.to_mss[0].lower()=='true':
+            to_mss = True
+            #to_mss = False #Currently don't want things in MSS
+        elif parsed_args.to_mss[0].lower()=='false':
+            to_mss = False
+        else:
+            raise RuntimeError('to_mss must be True or False')
+
+        job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
+        job['inputs'] = [{},{}]
         job['inputs'][0]['local'] = os.path.basename(coda)
         job['inputs'][0]['remote'] = coda
+        job['inputs'][1]['local'] = "nps_replay.tar.gz"
+        job['inputs'][1]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+        if to_mss:
+            job['outputs'] = [{}]
+            job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
+            job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
+        job['disk_bytes'] = run[1] *2.5 #1000000000
+        #if spectrometer.upper()=='NPS_PROD':
+            #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
+        #elif spectrometer.upper()=='NPS_SCALER':
+            #job['time_secs'] = int((run[2] / 6000 / 500)*1.1)
+            
 
         # command for job is `/hcswifdir/hcswif.sh REPLAY RUN NUMEVENTS`
-        job['command'] = [" ".join([batch, replay_script, str(run), str(evts)])]
+        job['command'] = [" ".join([batch, replay_script, str(run[0]), str(evts), str(run[2])])]
 
         jobs.append(copy.deepcopy(job))
 
     return jobs
 
 #------------------------------------------------------------------------------
-def getReplayRuns(run_args):
+def getReplayRuns(run_args, disk_args):
     runs = []
+    disk = []
+    seg = []
+    antecedent = []
     # User specified a file containing runs
     if (run_args[0]=='file'):
         filelist = run_args[1]
@@ -263,9 +301,21 @@ def getReplayRuns(run_args):
         # We assume user has been smart enough to only specify valid run numbers
         # or, at worst, lines only containing a \n
         for line in lines:
-            run = line.strip('\n')
+            splitted = line.split(" ")
+            if len(splitted) > 1:
+                run = splitted[0]
+                seg = splitted[1]
+                disk = splitted[2]
+            else:
+                run = line.strip('\n')
+                if disk_args==None:
+                    disk_bytes = 10000000000
+                    disk = int(disk_bytes)
+                else:
+                    disk = int(disk_args[0])
+                seg=''
             if len(run)>0:
-                runs.append(int(run))
+                runs.append([int(run), int(disk), int(seg)])
 
     # Arguments are either individual runs or ranges of runs. We check with a regex
     else:
@@ -409,10 +459,11 @@ def addCommonJobInfo(workflow, parsed_args):
         # TODO: Allow user to specify all of these parameters
         job['constraint'] = 'centos79'
         job['partition'] = 'production'
-        job['disk_bytes'] = disk_bytes
+        #job['disk_bytes'] = disk_bytes
         job['ram_bytes'] = ram_bytes
         job['cpu_cores'] = cpu
-        job['time_secs'] = time
+        if parsed_args.time!=None:
+            job['time_secs'] = time
 
         workflow['jobs'][n] = copy.deepcopy(job)
         job.clear()
