@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-sg c-nps #Set group to c-nps, so files go into /mss/ properly (hopefully)
+#sg c-nps #Set group to c-nps, so files go into /mss/ properly (hopefully)
 
 
 source /apps/modules/5.2.0/init/profile.sh

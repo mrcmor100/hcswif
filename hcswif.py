@@ -72,7 +72,7 @@ def parseArgs():
     parser.add_argument('--mode', nargs=1, dest='mode',
             help='type of workflow (replay or command)')
     parser.add_argument('--spectrometer', nargs=1, dest='spectrometer',
-                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
+                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, VLD_REPLAY, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
     parser.add_argument('--run', nargs='+', dest='run',
             help='a list of run numbers and ranges; or a file listing run numbers')
     parser.add_argument('--events', nargs=1, dest='events',
@@ -143,8 +143,8 @@ def initializeWorkflow(parsed_args):
 def getReplayJobs(parsed_args, wf_name):
     # Spectrometer
     spectrometer = parsed_args.spectrometer[0]
-    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
-        raise ValueError('Spectrometer must be HMS_ALL', 'NPS_ALL, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
+    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'VLD_REPLAY', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
+        raise ValueError('Spectrometer must be HMS_ALL, NPS_ALL, VLD_REPLAY, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
 
     # Run(s)
     if parsed_args.run==None:
@@ -159,6 +159,7 @@ def getReplayJobs(parsed_args, wf_name):
                         'NPS_ALL'       : '',
                         'HMS_PROD'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
                         'NPS_PROD'      : '',
+                        'VLD_REPLAY' : 'SCRIPTS/NPS/vld_replay.C', 
                         'HMS_COIN'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
                         'NPS_COIN'      : 'SCRIPTS/NPS/replay_production_coin_NPS_HMS.C',
                         'NPS_COIN_SCALER'      : '',
@@ -224,8 +225,11 @@ def getReplayJobs(parsed_args, wf_name):
 
         # Check if raw data file exist
         coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(run[2]))
+        coda0 = os.path.join(nps_raw_dir, coda_stem + '.dat.0')
         if not os.path.isfile(coda):
             warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
+        if not os.path.isfile(coda0):
+            warnings.warn('RAW DATA: ' + coda0 + ' does not exist. Skipping this job.')
             #continue
 
             #TODO: Fix collision between HMS rootfile names
@@ -233,6 +237,7 @@ def getReplayJobs(parsed_args, wf_name):
                         'NPS_ALL'                : '',
                         'HMS_PROD'               : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
                         'NPS_PROD'             : '',
+                        'VLD_REPLAY' : 'ROOTfiles/nps_%d.root',
                         'HMS_COIN'       : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
                         'NPS_COIN'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
                         'NPS_COIN_SCALER' : '',
@@ -245,6 +250,7 @@ def getReplayJobs(parsed_args, wf_name):
                              'NPS_ALL'                : '',
                              'HMS_PROD'               : '',
                              'NPS_PROD'             : '',
+                             'VLD_REPLAY' : '',
                              'HMS_COIN'               : '',
                              'NPS_COIN'             : '',
                              'NPS_COIN_SCALER' : '',
@@ -263,16 +269,18 @@ def getReplayJobs(parsed_args, wf_name):
             raise RuntimeError('to_mss must be True or False')
 
         job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
-        job['inputs'] = [{},{}]
+        job['inputs'] = [{},{},{}]
         job['inputs'][0]['local'] = os.path.basename(coda)
         job['inputs'][0]['remote'] = coda
-        job['inputs'][1]['local'] = "nps_replay.tar.gz"
-        job['inputs'][1]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+        job['inputs'][1]['local'] = os.path.basename(coda0)
+        job['inputs'][1]['remote'] = coda0
+        job['inputs'][2]['local'] = "nps_replay.tar.gz"
+        job['inputs'][2]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
         if to_mss:
             job['outputs'] = [{}]
             job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
             job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
-        job['disk_bytes'] = run[1] *2.5 #1000000000
+        job['disk_bytes'] = run[1] *2.5 + 20000000000
         #if spectrometer.upper()=='NPS_PROD':
             #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
         #elif spectrometer.upper()=='NPS_SCALER':

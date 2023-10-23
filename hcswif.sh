@@ -1,4 +1,5 @@
 #!/usr/bin/bash
+sg c-nps
 ARGC=$#
 if [[ $ARGC -ne 3 ]]; then
     echo Usage: hcswif.sh SCRIPT RUN EVENTS SEGMENT
