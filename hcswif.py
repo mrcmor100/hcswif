@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+
 import os
+import glob
 import re
 import sys
 import copy
@@ -72,7 +74,7 @@ def parseArgs():
     parser.add_argument('--mode', nargs=1, dest='mode',
             help='type of workflow (replay or command)')
     parser.add_argument('--spectrometer', nargs=1, dest='spectrometer',
-                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, VLD_REPLAY, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
+                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, VLD_REPLAY, NPS_PROD, HMS_COIN, NPS_SKIM, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
     parser.add_argument('--run', nargs='+', dest='run',
             help='a list of run numbers and ranges; or a file listing run numbers')
     parser.add_argument('--events', nargs=1, dest='events',
@@ -99,6 +101,9 @@ def parseArgs():
             help='Currently a shell cannot be specified in SWIF2')
     parser.add_argument('--to_mss', nargs=1, dest='to_mss',
             help='Write the output to mss, default is false')
+    parser.add_argument('--all_segs', nargs=1, dest='all_segs',
+            help='Add all segments of a run to each job, default is false')
+
 
     # Check if any args specified
     if len(sys.argv) < 2:
@@ -143,8 +148,8 @@ def initializeWorkflow(parsed_args):
 def getReplayJobs(parsed_args, wf_name):
     # Spectrometer
     spectrometer = parsed_args.spectrometer[0]
-    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'VLD_REPLAY', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
-        raise ValueError('Spectrometer must be HMS_ALL, NPS_ALL, VLD_REPLAY, HMS_PROD, NPS_PROD, HMS_COIN, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
+    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'VLD_REPLAY', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_SKIM', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
+        raise ValueError('Spectrometer must be HMS_ALL, NPS_ALL, VLD_REPLAY, HMS_PROD, NPS_PROD, HMS_COIN, NPS_SKIM, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
 
     # Run(s)
     if parsed_args.run==None:
@@ -161,6 +166,7 @@ def getReplayJobs(parsed_args, wf_name):
                         'NPS_PROD'      : '',
                         'VLD_REPLAY' : 'SCRIPTS/NPS/vld_replay.C', 
                         'HMS_COIN'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
+                        'NPS_SKIM'      : 'SCRIPTS/NPS/replay_production_skim_NPS_HMS.C',
                         'NPS_COIN'      : 'SCRIPTS/NPS/replay_production_coin_NPS_HMS.C',
                         'NPS_COIN_SCALER'      : '',
                         'HMS_SCALER'     : 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
@@ -178,9 +184,22 @@ def getReplayJobs(parsed_args, wf_name):
     else:
         evts = parsed_args.events[0]
 
+        if parsed_args.all_segs==None:
+            all_segs = False
+        elif parsed_args.all_segs[0].lower()=='true':
+            all_segs = True
+            #all_segs = False #Currently don't want things in MSS
+        elif parsed_args.all_segs[0].lower()=='false':
+            all_segs = False
+        else:
+            raise RuntimeError('all_segs must be True or False')
+
     # Which hcswif shell script should we use? bash or csh?
     if parsed_args.shell==None:
-        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
+        if all_segs==True:
+            batch = os.path.join(hcswif_dir, 'hcswif2_all_segs.sh')
+        else:
+            batch = os.path.join(hcswif_dir, 'hcswif2.sh')
     elif re.search('bash', parsed_args.shell[0]):
         batch = os.path.join(hcswif_dir, 'hcswif2.sh')
     elif re.search('csh', parsed_args.shell[0]):
@@ -222,7 +241,9 @@ def getReplayJobs(parsed_args, wf_name):
             #These are all COIN run[0]s.
             #coda_stem = 'shms_all_' + str(run[0]).zfill(5)
             #coda = os.path.join(cafe_raw_dir, coda_stem + '.dat')
-
+          
+            #TODO: Add option to run all segements of a run as output.
+        #if parsed_args.all_segments==None:
         # Check if raw data file exist
         coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(run[2]))
         coda0 = os.path.join(nps_raw_dir, coda_stem + '.dat.0')
@@ -239,6 +260,7 @@ def getReplayJobs(parsed_args, wf_name):
                         'NPS_PROD'             : '',
                         'VLD_REPLAY' : 'ROOTfiles/nps_%d.root',
                         'HMS_COIN'       : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
+                        'NPS_SKIM'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_%d.root',
                         'NPS_COIN'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
                         'NPS_COIN_SCALER' : '',
                         'HMS_SCALER'           : 'ROOTfiles/HMS/SCALARS/hms_replay_scalars_%d_%d_%d.root',
@@ -252,6 +274,7 @@ def getReplayJobs(parsed_args, wf_name):
                              'NPS_PROD'             : '',
                              'VLD_REPLAY' : '',
                              'HMS_COIN'               : '',
+                             'NPS_SKIM'             : '',
                              'NPS_COIN'             : '',
                              'NPS_COIN_SCALER' : '',
                              'HMS_SCALER'            : '',
@@ -269,18 +292,34 @@ def getReplayJobs(parsed_args, wf_name):
             raise RuntimeError('to_mss must be True or False')
 
         job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
-        job['inputs'] = [{},{},{}]
-        job['inputs'][0]['local'] = os.path.basename(coda)
-        job['inputs'][0]['remote'] = coda
-        job['inputs'][1]['local'] = os.path.basename(coda0)
-        job['inputs'][1]['remote'] = coda0
-        job['inputs'][2]['local'] = "nps_replay.tar.gz"
-        job['inputs'][2]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+        job['inputs'] = [{}]
+        job['inputs'][0]['local'] = "nps_replay.tar.gz"
+        job['inputs'][0]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+        if all_segs==True:
+            last_seg = run[2]+1
+            first_seg = 0
+            for seg in range(first_seg,last_seg):
+                coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(seg))
+                if not os.path.isfile(coda):
+                    warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
+                inp={}
+                inp['local'] = os.path.basename(coda)
+                inp['remote'] = coda
+                job['inputs'].append(inp)
+        else:
+            inp = {}
+            job['inputs'].append(inp)
+            job['inputs'].append(inp)
+            job['inputs'][1]['local'] = os.path.basename(coda0)
+            job['inputs'][1]['remote'] = coda0
+            job['inputs'][2]['local'] = os.path.basename(coda)
+            job['inputs'][2]['remote'] = coda
         if to_mss:
+            #DOES NOT WORK FOR EVERYTHING!!!
             job['outputs'] = [{}]
             job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
             job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
-        job['disk_bytes'] = run[1] *2.5 + 20000000000
+        job['disk_bytes'] = 20000000000*run[2] + 30000000000
         #if spectrometer.upper()=='NPS_PROD':
             #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
         #elif spectrometer.upper()=='NPS_SCALER':

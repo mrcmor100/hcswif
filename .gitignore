@@ -6,5 +6,6 @@ run-lists/*.dat
 run-lists/*.txt
 run-lists/*/
 troubleshoot*/
+check_output/
 .ipynb_checkpoints/
 *~
