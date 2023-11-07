@@ -294,7 +294,7 @@ def getReplayJobs(parsed_args, wf_name):
         job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
         job['inputs'] = [{}]
         job['inputs'][0]['local'] = "nps_replay.tar.gz"
-        job['inputs'][0]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+        job['inputs'][0]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay_NPS_SKIM_6.tar.gz')
         if all_segs==True:
             last_seg = run[2]+1
             first_seg = 0
@@ -307,19 +307,23 @@ def getReplayJobs(parsed_args, wf_name):
                 inp['remote'] = coda
                 job['inputs'].append(inp)
         else:
-            inp = {}
-            job['inputs'].append(inp)
-            job['inputs'].append(inp)
+            job['inputs'].append({})
             job['inputs'][1]['local'] = os.path.basename(coda0)
             job['inputs'][1]['remote'] = coda0
+            print(coda0)
+            job['inputs'].append({})
             job['inputs'][2]['local'] = os.path.basename(coda)
             job['inputs'][2]['remote'] = coda
+            print(coda)
         if to_mss:
             #DOES NOT WORK FOR EVERYTHING!!!
             job['outputs'] = [{}]
             job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
             job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
+        #This is for replay of all segments.
         job['disk_bytes'] = 20000000000*run[2] + 30000000000
+        #This is for segment jobs.
+        #job['disk_bytes'] = 2*run[1] + 30000000000
         #if spectrometer.upper()=='NPS_PROD':
             #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
         #elif spectrometer.upper()=='NPS_SCALER':
