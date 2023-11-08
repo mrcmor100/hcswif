@@ -18,7 +18,7 @@ import warnings
 # Where do you want your job output (json files, stdout, stderr)?
 std_out = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stdout/')
 std_err = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stderr/')
-json_dir = os.path.join('/group/nps/cmorean/hcswif/jsons')
+json_dir = os.path.join('/group/nps/', getpass.getuser() , 'hcswif/jsons')
 tape_out = os.path.join('/mss/hallc/c-nps/analysis/online/replays/')
 voli_path = os.path.join('/volatile/hallc/nps/', getpass.getuser())
 if not os.path.isdir(std_out):
@@ -103,6 +103,8 @@ def parseArgs():
             help='Write the output to mss, default is false')
     parser.add_argument('--all_segs', nargs=1, dest='all_segs',
             help='Add all segments of a run to each job, default is false')
+    parser.add_argument('--specify_replay', nargs=1, dest='specify_replay',
+            help='Specify the TAR for this nps_replay. Absolute path, default is assumed /group/nps/$USER/nps_replay.tar.gz.')
 
 
     # Check if any args specified
@@ -248,9 +250,9 @@ def getReplayJobs(parsed_args, wf_name):
         coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(run[2]))
         coda0 = os.path.join(nps_raw_dir, coda_stem + '.dat.0')
         if not os.path.isfile(coda):
-            warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
+            warnings.warn('RAW DATA: ' + coda + ' does not exist.')
         if not os.path.isfile(coda0):
-            warnings.warn('RAW DATA: ' + coda0 + ' does not exist. Skipping this job.')
+            warnings.warn('RAW DATA: ' + coda0 + ' does not exist.')
             #continue
 
             #TODO: Fix collision between HMS rootfile names
@@ -281,6 +283,15 @@ def getReplayJobs(parsed_args, wf_name):
                              'NPS_SCALER'          : ''}
         output_path = output_path_dict[spectrometer.upper()]
 
+        if parsed_args.specify_replay==None:
+            specify_replay=os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
+            if not os.path.isfile(specify_replay):
+                raise ValueError('No default replay TAR found.')       
+        else:
+            specify_replay=os.path.join(parsed_args.specify_replay[0])
+            if not os.path.isfile(specify_replay):
+                raise ValueError('User defined replay path and TAR must be valid.')       
+                
         if parsed_args.to_mss==None:
             to_mss = False
         elif parsed_args.to_mss[0].lower()=='true':
@@ -294,36 +305,44 @@ def getReplayJobs(parsed_args, wf_name):
         job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
         job['inputs'] = [{}]
         job['inputs'][0]['local'] = "nps_replay.tar.gz"
-        job['inputs'][0]['remote'] = os.path.join('/group/nps/', getpass.getuser() , 'nps_replay_NPS_SKIM_6.tar.gz')
+        job['inputs'][0]['remote'] = specify_replay
+
+        #Running sum of disk space required, not ideal. Start off with 1GB (for replay)
+        tmp_disk=1000000000
         if all_segs==True:
             last_seg = run[2]+1
             first_seg = 0
+            tmp_disk=20000000000*run[2] + 30000000000
             for seg in range(first_seg,last_seg):
                 coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(seg))
                 if not os.path.isfile(coda):
-                    warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
+                    warnings.warn('RAW DATA: ' + coda + ' does not exist.')
                 inp={}
                 inp['local'] = os.path.basename(coda)
                 inp['remote'] = coda
                 job['inputs'].append(inp)
         else:
+            #Specify file size as 20GB by hand, not ideal.
+            tmp_disk+=int(20000000000)
             job['inputs'].append({})
             job['inputs'][1]['local'] = os.path.basename(coda0)
             job['inputs'][1]['remote'] = coda0
-            print(coda0)
+            #print(coda0)
             job['inputs'].append({})
             job['inputs'][2]['local'] = os.path.basename(coda)
             job['inputs'][2]['remote'] = coda
-            print(coda)
+            tmp_disk+=int(20000000000)
+            #print(coda)
         if to_mss:
             #DOES NOT WORK FOR EVERYTHING!!!
             job['outputs'] = [{}]
             job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
             job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
         #This is for replay of all segments.
-        job['disk_bytes'] = 20000000000*run[2] + 30000000000
+        #job['disk_bytes'] = 
         #This is for segment jobs.
         #job['disk_bytes'] = 2*run[1] + 30000000000
+        job['disk_bytes'] = tmp_disk
         #if spectrometer.upper()=='NPS_PROD':
             #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
         #elif spectrometer.upper()=='NPS_SCALER':
