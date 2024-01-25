@@ -442,7 +442,7 @@ def getCommandJobs(parsed_args, wf_name):
         job = {}
         job['name'] = wf_name + '_job' + str(len(jobs))
 
-        job['command'] = cmd
+        job['command'] = [cmd]
 
         # Add any necessary files from tape
         if parsed_args.filelist==None:
