@@ -80,6 +80,8 @@ def parseArgs():
             help='max run time per job in seconds allowed before killing jobs')
     parser.add_argument('--shell', nargs=1, dest='shell',
             help='Currently a shell cannot be specified in SWIF2')
+    parser.add_argument('--apptainer', nargs=1, dest='apptainer',
+                    help='Specify path to apptainer image.')
 
     # Check if any args specified
     if len(sys.argv) < 2:
@@ -179,6 +181,11 @@ def getReplayJobs(parsed_args, wf_name):
         batch = os.path.join(hcswif_dir, 'hcswif.sh')
     elif re.search('csh', parsed_args.shell[0]):
         batch = os.path.join(hcswif_dir, 'hcswif.csh')
+    if parsed_args.apptainer:
+        if not os.path.isdir(str(parsed_args.apptainer[0])):
+            warnings.warn("APPTAINER image not found.")
+            sys.exit()
+        batch = os.path.join(hcswif_dir, "hcswif_apptainer.sh")
 
     # Create list of jobs for workflow
     jobs = []
@@ -218,7 +225,10 @@ def getReplayJobs(parsed_args, wf_name):
         job['inputs'][0]['remote'] = coda
 
         # command for job is `/hcswifdir/hcswif.sh REPLAY RUN NUMEVENTS`
-        job['command'] = [" ".join([batch, replay_script, str(run), str(evts)])]
+        if parsed_args.apptainer:
+             job['command'] = [" ".join([batch, replay_script, str(run), str(evts), str(parsed_args.apptainer[0]), str(raw_dir)])]
+        else:
+            job['command'] = [" ".join([batch, replay_script, str(run), str(evts)])]
 
         jobs.append(copy.deepcopy(job))
 
