@@ -15,7 +15,7 @@ import warnings
 
 # Where do you want your job output (json files, stdout, stderr)?
 out_dir   = os.path.join('/farm_out/', getpass.getuser() , 'hcswif/output')
-json_dir = os.path.join('/home/', getpass.getuser() , 'hcswif/json')
+json_dir = os.path.join('/home/', getpass.getuser() , 'hcswif')
 if not os.path.isdir(out_dir):
     warnings.warn('out_dir: ' + out_dir + ' does not exist')
 if not os.path.isdir(json_dir):
@@ -80,9 +80,13 @@ def parseArgs():
             help='max run time per job in seconds allowed before killing jobs')
     parser.add_argument('--shell', nargs=1, dest='shell',
             help='Currently a shell cannot be specified in SWIF2')
+    parser.add_argument('--constraint', nargs='+', dest='constraint',
+            help='user defined SWIF2 constraints (slurm feature).  Space separated if multiple')
     parser.add_argument('--apptainer', nargs=1, dest='apptainer',
                     help='Specify path to apptainer image.')
 
+    print("Ensure your analyzer can compule with the default OS")
+    print("Currently no check on constraints.  See the scicomp Slurm Info page for the latest constraints.")
     # Check if any args specified
     if len(sys.argv) < 2:
         raise RuntimeError(parser.print_help())
@@ -219,6 +223,8 @@ def getReplayJobs(parsed_args, wf_name):
             warnings.warn('RAW DATA: ' + coda + ' does not exist. Skipping this job.')
             continue
 
+
+        job['constraint'] = processConstraints(parsed_args.constraint)
         job['name'] =  wf_name + '_' + coda_stem
         job['inputs'] = [{}]
         job['inputs'][0]['local'] = os.path.basename(coda)
@@ -273,6 +279,16 @@ def getReplayRuns(run_args):
     return runs
 
 #------------------------------------------------------------------------------
+def processConstraints(swif2_constraints):
+    #Constraints will come in an array if entered with space separations.
+    if swif2_constraints == None:
+        return ""
+    else:
+        return ','.join(swif2_constraints)
+    return ""
+
+
+    #------------------------------------------------------------------------------
 def getCommandJobs(parsed_args, wf_name):
 
     # command for job should have been specified by user
@@ -390,7 +406,7 @@ def addCommonJobInfo(workflow, parsed_args):
         job['stderr'] = os.path.join(out_dir, job['name'] + '.err')
 
         # TODO: Allow user to specify all of these parameters
-        job['constraint'] = 'centos79'
+        job['constraint'] = processConstraints(parsed_args.constraint)
         job['partition'] = 'production'
         job['disk_bytes'] = disk_bytes
         job['ram_bytes'] = ram_bytes
