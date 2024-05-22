@@ -282,10 +282,10 @@ def getReplayRuns(run_args):
 def processConstraints(swif2_constraints):
     #Constraints will come in an array if entered with space separations.
     if swif2_constraints == None:
-        return ""
+        return "el9"
     else:
         return ','.join(swif2_constraints)
-    return ""
+    return "el9"
 
 
     #------------------------------------------------------------------------------
