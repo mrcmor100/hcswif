@@ -7,7 +7,7 @@ source /apps/modules/5.2.0/init/profile.sh
 module use /apps/modulefiles
 module use /group/halla/modulefiles
 module use /group/nps/modulefiles
-module load nps_replay
+module load nps_replay/2.20.24
 #setenv LD_LIBRARY_PATH /group/nps/$USER/NPSlib/BUILD/lib64:$LD_LIBRARY_PATH
 #export LD_LIBRARY_PATH=/group/nps/$USER/NPSlib/BUILD/lib64:$LD_LIBRARY_PATH
 # -----------------------------------------------------------------------------

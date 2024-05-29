@@ -3,8 +3,8 @@
 # Define an associative array to store the largest NUM for each RUN
 declare -A max_num
 
-run_min=$1
-run_max=$2
+run_min=$(($1-1))
+run_max=$(($2+1))
 fsize=$3
 
 if [ -z "$fsize" ]; then

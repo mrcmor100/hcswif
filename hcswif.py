@@ -262,7 +262,7 @@ def getReplayJobs(parsed_args, wf_name):
                         'NPS_PROD'             : '',
                         'VLD_REPLAY' : 'ROOTfiles/nps_%d.root',
                         'HMS_COIN'       : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
-                        'NPS_SKIM'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_%d.root',
+                        'NPS_SKIM'      : 'ROOTfiles/COIN/SKIM/nps_hms_skim_%d_%d_%d.root',
                         'NPS_COIN'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
                         'NPS_COIN_SCALER' : '',
                         'HMS_SCALER'           : 'ROOTfiles/HMS/SCALARS/hms_replay_scalars_%d_%d_%d.root',
@@ -276,7 +276,7 @@ def getReplayJobs(parsed_args, wf_name):
                              'NPS_PROD'             : '',
                              'VLD_REPLAY' : '',
                              'HMS_COIN'               : '',
-                             'NPS_SKIM'             : '',
+                             'NPS_SKIM'             : 'production/',
                              'NPS_COIN'             : '',
                              'NPS_COIN_SCALER' : '',
                              'HMS_SCALER'            : '',
@@ -336,8 +336,12 @@ def getReplayJobs(parsed_args, wf_name):
         if to_mss:
             #DOES NOT WORK FOR EVERYTHING!!!
             job['outputs'] = [{}]
-            job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
-            job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
+            if spectrometer.upper() == 'NPS_SKIM':
+                job['outputs'][0]['local'] = script_output % (int(run[0]), int(1), int(-1))
+                job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(1), int(-1))))
+            else:
+                job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
+                job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
         #This is for replay of all segments.
         #job['disk_bytes'] = 
         #This is for segment jobs.
