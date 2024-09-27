@@ -1,7 +1,7 @@
 #!/usr/bin/bash
-sg c-nps
+
 ARGC=$#
-if [[ $ARGC -ne 3 ]]; then
+if [[ $ARGC -ne 4 ]]; then
     echo Usage: hcswif.sh SCRIPT RUN EVENTS SEGMENT
     exit 1
 fi;
@@ -21,8 +21,12 @@ if ! [ $(command -v hcana) ]; then
 fi
 
 # Replay the run
-runHcana="hcana -q \"$script($run,$evt,1,$seg,$seg)\""
-cd $REPLAYDIR
+runHcana="hcana -q \"$script($run,$evt,1,$seg,0)\""
+#runHcana="hcana -q \"$script($run,$evt)\""
+
+#cd $hallc_replay_dir
+tar -xf nps_replay.tar.gz
+
 echo pwd: $(pwd)
 echo $runHcana
 eval $runHcana
