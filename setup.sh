@@ -2,12 +2,12 @@
 #sg c-nps #Set group to c-nps, so files go into /mss/ properly (hopefully)
 
 
-source /apps/modules/5.2.0/init/profile.sh
+#source /apps/modules/5.2.0/init/profile.sh
 #source /apps/modules/5.2.0/init/profile.csh
-module use /apps/modulefiles
+source /etc/profile
 module use /group/halla/modulefiles
 module use /group/nps/modulefiles
-module load nps_replay/2.20.24
+module load nps_replay/5.28.24
 #setenv LD_LIBRARY_PATH /group/nps/$USER/NPSlib/BUILD/lib64:$LD_LIBRARY_PATH
 #export LD_LIBRARY_PATH=/group/nps/$USER/NPSlib/BUILD/lib64:$LD_LIBRARY_PATH
 # -----------------------------------------------------------------------------

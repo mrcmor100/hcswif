@@ -1,0 +1,3 @@
+PATTERN 1
+/mss/hallc/c-nps/analysis/online/replays/production/nps_hms_skim_{param}_1_-1.root
+/mss/hallc/c-nps/raw/nps_coin_{param}.dat.*

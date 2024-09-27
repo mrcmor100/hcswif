@@ -415,7 +415,7 @@ def getReplayRuns(run_args, disk_args):
 
 #------------------------------------------------------------------------------
 def getCommandJobs(parsed_args, wf_name):
-
+    print("Broken for non-PATTERN filelist input...\n See code!")
     # command for job should have been specified by user
     if parsed_args.command==None:
         raise RuntimeError('Must specify command for batch job')
@@ -455,12 +455,20 @@ def getCommandJobs(parsed_args, wf_name):
             filelist = parsed_args.filelist[0]
             f = open(filelist,'r')
             lines = f.readlines()
-
+            line0 = lines[0].split(" ")
+            lines = lines[1:]
+            if('PATTERN' in line0[0]):
+                # Broken for non-PATTERN filelist input...
+                # Which parameter of the command would we like to pattern off of?
+                parameter = line0[1] # Typically this is the run number.
+                cmd_options = cmd.split(" ")
+                param = cmd_options[int(parameter)]
             # We assume user has been smart enough to only specify valid files
             # or, at worst, lines only containing a \n
             job['inputs'] = []
             for line in lines:
                 filename = line.strip('\n')
+                filename = filename.format(param=param)
                 if len(filename)>0:
                     if not os.path.isfile(filename):
                         warnings.warn('RAW DATA: ' + filename + ' does not exist')
