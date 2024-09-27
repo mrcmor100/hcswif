@@ -16,6 +16,7 @@ import warnings
 # Define environment
 
 # Where do you want your job output (json files, stdout, stderr)?
+
 std_out = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stdout/')
 std_err = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stderr/')
 json_dir = os.path.join('/group/nps/', getpass.getuser() , 'hcswif/jsons')
@@ -25,6 +26,7 @@ if not os.path.isdir(std_out):
     warnings.warn('std_out: ' + std_out + ' does not exist')
 if not os.path.isdir(std_err):
     warnings.warn('std_err: ' + std_err + ' does not exist')
+
 if not os.path.isdir(json_dir):
     warnings.warn('json_dir: ' + json_dir + ' does not exist')
 
@@ -105,8 +107,13 @@ def parseArgs():
             help='Add all segments of a run to each job, default is false')
     parser.add_argument('--specify_replay', nargs=1, dest='specify_replay',
             help='Specify the TAR for this nps_replay. Absolute path, default is assumed /group/nps/$USER/nps_replay.tar.gz.')
+    parser.add_argument('--constraint', nargs='+', dest='constraint',
+            help='user defined SWIF2 constraints (slurm feature).  Space separated if multiple')
+    parser.add_argument('--apptainer', nargs=1, dest='apptainer',
+                    help='Specify path to apptainer image.')
 
-
+    print("Ensure your analyzer can compule with the default OS")
+    print("Currently no check on constraints.  See the scicomp Slurm Info page for the latest constraints.")
     # Check if any args specified
     if len(sys.argv) < 2:
         raise RuntimeError(parser.print_help())
@@ -206,6 +213,11 @@ def getReplayJobs(parsed_args, wf_name):
         batch = os.path.join(hcswif_dir, 'hcswif2.sh')
     elif re.search('csh', parsed_args.shell[0]):
         batch = os.path.join(hcswif_dir, 'hcswif.csh')
+    if parsed_args.apptainer:
+        if not os.path.isdir(str(parsed_args.apptainer[0])):
+            warnings.warn("APPTAINER image not found.")
+            sys.exit()
+        batch = os.path.join(hcswif_dir, "hcswif_apptainer.sh")
 
     # Create list of jobs for workflow
     jobs = []
@@ -303,6 +315,8 @@ def getReplayJobs(parsed_args, wf_name):
             raise RuntimeError('to_mss must be True or False')
 
         job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
+        job['constraint'] = processConstraints(parsed_args.constraint)
+        job['name'] =  wf_name + '_' + coda_stem
         job['inputs'] = [{}]
         job['inputs'][0]['local'] = "nps_replay.tar.gz"
         job['inputs'][0]['remote'] = specify_replay
@@ -354,8 +368,11 @@ def getReplayJobs(parsed_args, wf_name):
             
 
         # command for job is `/hcswifdir/hcswif.sh REPLAY RUN NUMEVENTS`
-        job['command'] = [" ".join([batch, replay_script, str(run[0]), str(evts), str(run[2])])]
-
+        if parsed_args.apptainer:
+             job['command'] = [" ".join([batch, replay_script, str(run), str(evts), str(parsed_args.apptainer[0]), str(raw_dir)])]
+        else:
+          job['command'] = [" ".join([batch, replay_script, str(run[0]), str(evts), str(run[2])])]
+     
         jobs.append(copy.deepcopy(job))
 
     return jobs
@@ -414,6 +431,16 @@ def getReplayRuns(run_args, disk_args):
     return runs
 
 #------------------------------------------------------------------------------
+def processConstraints(swif2_constraints):
+    #Constraints will come in an array if entered with space separations.
+    if swif2_constraints == None:
+        return "el9"
+    else:
+        return ','.join(swif2_constraints)
+    return "el9"
+
+
+    #------------------------------------------------------------------------------
 def getCommandJobs(parsed_args, wf_name):
     print("Broken for non-PATTERN filelist input...\n See code!")
     # command for job should have been specified by user
@@ -539,7 +566,7 @@ def addCommonJobInfo(workflow, parsed_args):
         job['stderr'] = os.path.join(std_err, job['name'] + '.err')
 
         # TODO: Allow user to specify all of these parameters
-        job['constraint'] = 'centos79'
+        job['constraint'] = processConstraints(parsed_args.constraint)
         job['partition'] = 'production'
         #job['disk_bytes'] = disk_bytes
         job['ram_bytes'] = ram_bytes
