@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Refactored hcswif workflow creator
+
+This version extracts hard-coded parameters into a configuration
+and organizes the code into more modular functions.
+"""
 
 import os
 import glob
@@ -12,513 +18,188 @@ import argparse
 import datetime
 import warnings
 
-#------------------------------------------------------------------------------
-# Define environment
+#--------------------------------------------------------------------
+# Configuration Module
+# In practice, this might be in a separate file (e.g. config.py)
+# and imported with "import config". For now it is inline.
 
-# Where do you want your job output (json files, stdout, stderr)?
+class Config:
+    # User and time-dependent parameters
+    USER = getpass.getuser()
+    NOW = datetime.datetime.now()
+    DATESTR = NOW.strftime("%Y%m%d%H%M")
+    HCSWIF_PREFIX = 'hcswif' + DATESTR
 
-std_out = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stdout/')
-std_err = os.path.join('/farm_out/', getpass.getuser() , 'nps_replay_stderr/')
-json_dir = os.path.join('/group/nps/', getpass.getuser() , 'hcswif/jsons')
-tape_out = os.path.join('/mss/hallc/c-nps/analysis/online/replays/')
-voli_path = os.path.join('/volatile/hallc/nps/', getpass.getuser())
-if not os.path.isdir(std_out):
-    warnings.warn('std_out: ' + std_out + ' does not exist')
-if not os.path.isdir(std_err):
-    warnings.warn('std_err: ' + std_err + ' does not exist')
+    # Directories for job outputs and workflow files
+    BASE_DIRS = {
+        "std_out": os.path.join('./farm_out/', USER, 'replay_stdout'),
+        "std_err": os.path.join('./farm_out/', USER, 'replay_stderr'),
+        "json_dir": os.path.join('./', 'hcswif/jsons'),
+        "tape_out": os.path.join('./mss/replays'),
+        "voli_path": os.path.join('./volatile/', USER)
+    }
 
-if not os.path.isdir(json_dir):
-    warnings.warn('json_dir: ' + json_dir + ' does not exist')
+    # Directories for raw data
+    RAW_DIRS = {
+        "sp22": '/mss/hallc/xem2/raw',
+        "sp18": '/mss/hallc/spring17/raw',
+        "sp19": '/mss/hallc/jpsi-007/raw',
+        "cafe": '/mss/hallc/c-cafe-2022/raw',
+        "nps": '/mss/hallc/c-nps/raw'
+    }
 
-# Where is your raw data?
-sp22_raw_dir = '/mss/hallc/xem2/raw'
-sp18_raw_dir = '/mss/hallc/spring17/raw'
-sp19_raw_dir = '/mss/hallc/jpsi-007/raw'
-cafe_raw_dir = '/mss/hallc/c-cafe-2022/raw'
-nps_raw_dir  = '/mss/hallc/c-nps/raw'
-if not os.path.isdir(sp22_raw_dir):
-    warnings.warn('raw_dir: ' + sp22_raw_dir + ' does not exist')
-if not os.path.isdir(sp18_raw_dir):
-    warnings.warn('raw_dir: ' + sp18_raw_dir + ' does not exist')
-if not os.path.isdir(sp19_raw_dir):
-    warnings.warn('raw_dir: ' + sp19_raw_dir + ' does not exist')
-if not os.path.isdir(cafe_raw_dir):
-    warnings.warn('raw_dir: ' + cafe_raw_dir + ' does not exist')
-if not os.path.isdir(nps_raw_dir):
-    warnings.warn('raw_dir: ' + nps_raw_dir + ' does not exist')
+    # Default values for job resources
+    DEFAULTS = {
+        "events": -1,             # -1 means all events
+        "disk_bytes": 10000000000,
+        "ram_bytes": 2500000000,
+        "cpu": 1,
+        "time_secs": 14400,
+        "constraint": "el9",
+        "partition": "production"
+    }
 
-# Where is hcswif?
-hcswif_dir = os.path.dirname(os.path.realpath(__file__))
+    # Default replay scripts for each spectrometer type.
+    REPLAY_SCRIPTS = {
+        'HMS_ALL': 'SCRIPTS/HMS/PRODUCTION/replay_production_all_hms.C',
+        'NPS_ALL': '',
+        'HMS_PROD': 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
+        'NPS_PROD': '',
+        'VLD_REPLAY': 'SCRIPTS/NPS/vld_replay.C',
+        'HMS_COIN': 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
+        'NPS_SKIM': 'SCRIPTS/NPS/replay_production_skim_NPS_HMS.C',
+        'NPS_COIN': 'SCRIPTS/NPS/replay_production_coin_NPS_HMS.C',
+        'NPS_COIN_SCALER': '',
+        'HMS_SCALER': 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
+        'NPS_SCALER': ''
+    }
 
-# hcswif_prefix is used as prefix for workflow, job names, filenames, etc.
-now = datetime.datetime.now()
-datestr = now.strftime("%Y%m%d%H%M")
-hcswif_prefix = 'hcswif' + datestr
+    # Output filename formats for each spectrometer type
+    OUTPUT_FORMATS = {
+        'HMS_ALL': 'ROOTfiles/hms_replay_production_all_%d_%d_%d.root',
+        'NPS_ALL': '',
+        'HMS_PROD': 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
+        'NPS_PROD': '',
+        'VLD_REPLAY': 'ROOTfiles/nps_%d.root',
+        'HMS_COIN': 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
+        'NPS_SKIM': 'ROOTfiles/COIN/SKIM/nps_hms_skim_%d_%d_%d.root',
+        'NPS_COIN': 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
+        'NPS_COIN_SCALER': '',
+        'HMS_SCALER': 'ROOTfiles/HMS/SCALARS/hms_replay_scalars_%d_%d_%d.root',
+        'NPS_SCALER': ''
+    }
 
-#------------------------------------------------------------------------------
-# This is the main body of hcswif
-def main():
-    # Parse the arguments specified by the user
-    parsed_args = parseArgs()
+    # Additional output path suffixes for specific spectrometer types
+    OUTPUT_PATHS = {
+        'HMS_ALL': '',
+        'NPS_ALL': '',
+        'HMS_PROD': '',
+        'NPS_PROD': '',
+        'VLD_REPLAY': '',
+        'HMS_COIN': '',
+        'NPS_SKIM': 'production/',
+        'NPS_COIN': '',
+        'NPS_COIN_SCALER': '',
+        'HMS_SCALER': '',
+        'NPS_SCALER': ''
+    }
 
-    # Turn those arguments into a swif workflow in json format and
-    # generate a filename for the json file to write.
-    workflow, outfile = getWorkflow(parsed_args)
+    # Disk and MSS configuration
+    DISK_SPECS = {
+        "base_disk": 1000000000,             # base disk space (in bytes)
+        "non_all_segs": 20000000000,         # disk space increment for non-all_segs jobs
+        "all_segs_multiplier": 20000000000,  # multiplier per segment when all segments are processed
+        "all_segs_offset": 30000000000       # additional offset when all segments are processed
+    }
+    TO_MSS_DEFAULT = False  # default flag for writing outputs to MSS
 
-    # Write the workflow to disk
-    writeWorkflow(workflow, outfile)
+    # Default path for the replay tar file
+    DEFAULT_REPLAY_TAR = os.path.join('/group/nps/', USER, 'nps_replay.tar.gz')
 
-#------------------------------------------------------------------------------
+
+#--------------------------------------------------------------------
+# Utility functions
+def check_directories():
+    """Check that key directories exist; warn if they do not."""
+    for key, path in Config.BASE_DIRS.items():
+        if not os.path.isdir(path):
+            warnings.warn(f"{key} directory does not exist: {path}")
+    for key, path in Config.RAW_DIRS.items():
+        if not os.path.isdir(path):
+            warnings.warn(f"Raw data directory for {key} does not exist: {path}")
+
+
+#--------------------------------------------------------------------
+# Argument parsing remains largely the same
 def parseArgs():
     parser = argparse.ArgumentParser()
 
-    # Add arguments
+    # Add arguments; these override configuration defaults if provided.
     parser.add_argument('--mode', nargs=1, dest='mode',
-            help='type of workflow (replay or command)')
+                        help='type of workflow (replay or command)')
     parser.add_argument('--spectrometer', nargs=1, dest='spectrometer',
-                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, HMS_PROD, VLD_REPLAY, NPS_PROD, HMS_COIN, NPS_SKIM, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER)')
+                        help='spectrometer to analyze (HMS_ALL, NPS_ALL, etc.)')
     parser.add_argument('--run', nargs='+', dest='run',
-            help='a list of run numbers and ranges; or a file listing run numbers')
+                        help='a list of run numbers and ranges; or a file listing run numbers')
     parser.add_argument('--events', nargs=1, dest='events',
-            help='number of events to analyze (default=all)')
+                        help='number of events to analyze (default=all)')
     parser.add_argument('--name', nargs=1, dest='name',
-            help='workflow name')
+                        help='workflow name')
     parser.add_argument('--replay', nargs=1, dest='replay',
-            help='hcana replay script; path relative to hallc_replay')
+                        help='hcana replay script; path relative to hallc_replay')
     parser.add_argument('--command', nargs="+", dest='command',
-            help='shell command/script to run; or a file containing scripts to run (command mode only)')
+                        help='shell command/script to run; or a file containing scripts (command mode only)')
     parser.add_argument('--filelist', nargs=1, dest='filelist',
-            help='file containing list of files to get from tape (command mode only)')
+                        help='file containing list of files to get from tape (command mode only)')
     parser.add_argument('--account', nargs=1, dest='account',
-            help='name of account')
+                        help='name of account')
     parser.add_argument('--disk', nargs=1, dest='disk',
-            help='disk space in bytes')
+                        help='disk space in bytes')
     parser.add_argument('--ram', nargs=1, dest='ram',
-            help='ram space in bytes')
+                        help='ram space in bytes')
     parser.add_argument('--cpu', nargs=1, dest='cpu',
-            help='cpu cores')
+                        help='cpu cores')
     parser.add_argument('--time', nargs=1, dest='time',
-            help='max run time per job in seconds allowed before killing jobs')
+                        help='max run time per job in seconds allowed before killing jobs')
     parser.add_argument('--shell', nargs=1, dest='shell',
-            help='Currently a shell cannot be specified in SWIF2')
+                        help='Currently a shell cannot be specified in SWIF2')
     parser.add_argument('--to_mss', nargs=1, dest='to_mss',
-            help='Write the output to mss, default is false')
+                        help='Write the output to mss, default is false')
     parser.add_argument('--all_segs', nargs=1, dest='all_segs',
-            help='Add all segments of a run to each job, default is false')
+                        help='Add all segments of a run to each job, default is false')
     parser.add_argument('--specify_replay', nargs=1, dest='specify_replay',
-            help='Specify the TAR for this nps_replay. Absolute path, default is assumed /group/nps/$USER/nps_replay.tar.gz.')
+                        help='Specify the TAR for this nps_replay. Absolute path, default is assumed in config.')
     parser.add_argument('--constraint', nargs='+', dest='constraint',
-            help='user defined SWIF2 constraints (slurm feature).  Space separated if multiple')
+                        help='user defined SWIF2 constraints (slurm feature).  Space separated if multiple')
     parser.add_argument('--apptainer', nargs=1, dest='apptainer',
-                    help='Specify path to apptainer image.')
+                        help='Specify path to apptainer image.')
 
-    print("Ensure your analyzer can compule with the default OS")
-    print("Currently no check on constraints.  See the scicomp Slurm Info page for the latest constraints.")
-    # Check if any args specified
+    # Informational output
+    print("Ensure your analyzer can compile with the default OS")
+    print("No check on constraints; see the scicomp Slurm Info page for the latest constraints.")
+
     if len(sys.argv) < 2:
         raise RuntimeError(parser.print_help())
-
-    # Return parsed arguments
     return parser.parse_args()
 
-#------------------------------------------------------------------------------
-def getWorkflow(parsed_args):
-    # Initialize
-    workflow = initializeWorkflow(parsed_args)
-    outfile = os.path.join(json_dir, workflow['name'] + '.json')
 
-    # Get jobs
-    if parsed_args.mode==None:
-        raise RuntimeError('Must specify a mode (replay or command)')
-    mode = parsed_args.mode[0].lower()
-    if mode == 'replay':
-        workflow['jobs'] = getReplayJobs(parsed_args, workflow['name'])
-    elif mode == 'command':
-        workflow['jobs'] = getCommandJobs(parsed_args, workflow['name'])
-    else:
-        raise ValueError('Mode must be replay or command')
-
-    # Add account to jobs
-    workflow = addCommonJobInfo(workflow, parsed_args)
-
-    return workflow, outfile
-
-#------------------------------------------------------------------------------
+#--------------------------------------------------------------------
+# Workflow creation functions
 def initializeWorkflow(parsed_args):
     workflow = {}
-    if parsed_args.name==None:
-        workflow['name'] = hcswif_prefix
+    if parsed_args.name is None:
+        workflow['name'] = Config.HCSWIF_PREFIX
     else:
         workflow['name'] = parsed_args.name[0]
-
     return workflow
 
-#------------------------------------------------------------------------------
-def getReplayJobs(parsed_args, wf_name):
-    # Spectrometer
-    spectrometer = parsed_args.spectrometer[0]
-    if spectrometer.upper() not in ['HMS_ALL', 'NPS_ALL', 'VLD_REPLAY', 'HMS_PROD', 'NPS_PROD', 'HMS_COIN', 'NPS_SKIM', 'NPS_COIN', 'NPS_COIN_SCALER', 'HMS_SCALER', 'NPS_SCALER']:
-        raise ValueError('Spectrometer must be HMS_ALL, NPS_ALL, VLD_REPLAY, HMS_PROD, NPS_PROD, HMS_COIN, NPS_SKIM, NPS_COIN, NPS_COIN_SCALER, HMS_SCALER, NPS_SCALER')
 
-    # Run(s)
-    if parsed_args.run==None:
-        raise RuntimeError('Must specify run(s) to process')
-    else:
-        runs = getReplayRuns(parsed_args.run, parsed_args.disk)
-
-    # Replay script to use
-    if parsed_args.replay==None:
-        # User has not specified a script, so we provide them with default options
-        script_dict = { 'HMS_ALL'        : 'SCRIPTS/HMS/PRODUCTION/replay_production_all_hms.C',
-                        'NPS_ALL'       : '',
-                        'HMS_PROD'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms.C',
-                        'NPS_PROD'      : '',
-                        'VLD_REPLAY' : 'SCRIPTS/NPS/vld_replay.C', 
-                        'HMS_COIN'       : 'SCRIPTS/HMS/PRODUCTION/replay_production_hms_coin.C',
-                        'NPS_SKIM'      : 'SCRIPTS/NPS/replay_production_skim_NPS_HMS.C',
-                        'NPS_COIN'      : 'SCRIPTS/NPS/replay_production_coin_NPS_HMS.C',
-                        'NPS_COIN_SCALER'      : '',
-                        'HMS_SCALER'     : 'SCRIPTS/HMS/SCALERS/replay_hms_scalers.C',
-                        'NPS_SCALER'    : ''}
-        replay_script = script_dict[spectrometer.upper()]
-    # User specified a script so we use that one
-    else:
-        replay_script = parsed_args.replay[0]
-
-
-    # Number of events; default is -1 (i.e. all)
-    if parsed_args.events==None:
-        warnings.warn('No events specified. Analyzing all events.')
-        evts = -1
-    else:
-        evts = parsed_args.events[0]
-
-        if parsed_args.all_segs==None:
-            all_segs = False
-        elif parsed_args.all_segs[0].lower()=='true':
-            all_segs = True
-            #all_segs = False #Currently don't want things in MSS
-        elif parsed_args.all_segs[0].lower()=='false':
-            all_segs = False
-        else:
-            raise RuntimeError('all_segs must be True or False')
-
-    # Which hcswif shell script should we use? bash or csh?
-    if parsed_args.shell==None:
-        if all_segs==True:
-            batch = os.path.join(hcswif_dir, 'hcswif2_all_segs.sh')
-        else:
-            batch = os.path.join(hcswif_dir, 'hcswif2.sh')
-    elif re.search('bash', parsed_args.shell[0]):
-        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
-    elif re.search('csh', parsed_args.shell[0]):
-        batch = os.path.join(hcswif_dir, 'hcswif.csh')
-    if parsed_args.apptainer:
-        if not os.path.isdir(str(parsed_args.apptainer[0])):
-            warnings.warn("APPTAINER image not found.")
-            sys.exit()
-        batch = os.path.join(hcswif_dir, "hcswif_apptainer.sh")
-
-    # Create list of jobs for workflow
-    jobs = []
-
-    for run in runs:
-        job = {}
-
-        # Assume coda stem looks like shms_all_XXXXX, hms_all_XXXXX, or coin_all_XXXXX
-        if 'coin' in spectrometer.lower():
-            # shms_coin and hms_coin use same coda files as coin
-            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
-        elif 'all' in spectrometer.lower():
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            all_spec  = spectrometer.replace('_ALL', '')
-            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
-        elif 'prod' in spectrometer.lower():
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            prod_spec = spectrometer.replace('_PROD', '')
-            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
-        elif 'scaler' in spectrometer.lower():
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            scaler_spec = spectrometer.replace('_SCALER', '')
-            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
-        else:
-            # otherwise hms_all_XXXXX or shms_all_XXXXX
-            coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
-
-#        if (run[0] > 11000 and 'shms' in spectrometer.lower()) : 
-#           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
-#        elif (run[0] > 4000 and 'hms' in spectrometer.lower()) : 
-#           coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
-        #if(run[0]>4300 and run[0] < 16940 and 'hms' in spectrometer.lower()):
-            #coda = os.path.join(sp22_raw_dir, coda_stem + '.dat')
-        #elif (run[0] > 16940 and run[0] < 17144 and 'hms' in spectrometer.lower()) : 
-            #These are all COIN run[0]s.
-            #coda_stem = 'shms_all_' + str(run[0]).zfill(5)
-            #coda = os.path.join(cafe_raw_dir, coda_stem + '.dat')
-          
-            #TODO: Add option to run all segements of a run as output.
-        #if parsed_args.all_segments==None:
-        # Check if raw data file exist
-        coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(run[2]))
-        coda0 = os.path.join(nps_raw_dir, coda_stem + '.dat.0')
-        if not os.path.isfile(coda):
-            warnings.warn('RAW DATA: ' + coda + ' does not exist.')
-        if not os.path.isfile(coda0):
-            warnings.warn('RAW DATA: ' + coda0 + ' does not exist.')
-            #continue
-
-            #TODO: Fix collision between HMS rootfile names
-        output_dict = { 'HMS_ALL'             : 'ROOTfiles/hms_replay_production_all_%d_%d_%d.root',
-                        'NPS_ALL'                : '',
-                        'HMS_PROD'               : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
-                        'NPS_PROD'             : '',
-                        'VLD_REPLAY' : 'ROOTfiles/nps_%d.root',
-                        'HMS_COIN'       : 'ROOTfiles/HMS/PRODUCTION/hms_replay_production_%d_%d_%d.root',
-                        'NPS_SKIM'      : 'ROOTfiles/COIN/SKIM/nps_hms_skim_%d_%d_%d.root',
-                        'NPS_COIN'      : 'ROOTfiles/COIN/PRODUCTION/nps_hms_coin_%d_%d_1_%d.root',
-                        'NPS_COIN_SCALER' : '',
-                        'HMS_SCALER'           : 'ROOTfiles/HMS/SCALARS/hms_replay_scalars_%d_%d_%d.root',
-                        'NPS_SCALER'          : ''}
-        script_output = output_dict[spectrometer.upper()]
-
-        #No output tape path determined yet.
-        output_path_dict = { 'HMS_ALL'    : '',
-                             'NPS_ALL'                : '',
-                             'HMS_PROD'               : '',
-                             'NPS_PROD'             : '',
-                             'VLD_REPLAY' : '',
-                             'HMS_COIN'               : '',
-                             'NPS_SKIM'             : 'production/',
-                             'NPS_COIN'             : '',
-                             'NPS_COIN_SCALER' : '',
-                             'HMS_SCALER'            : '',
-                             'NPS_SCALER'          : ''}
-        output_path = output_path_dict[spectrometer.upper()]
-
-        if parsed_args.specify_replay==None:
-            specify_replay=os.path.join('/group/nps/', getpass.getuser() , 'nps_replay.tar.gz')
-            if not os.path.isfile(specify_replay):
-                raise ValueError('No default replay TAR found.')       
-        else:
-            specify_replay=os.path.join(parsed_args.specify_replay[0])
-            if not os.path.isfile(specify_replay):
-                raise ValueError('User defined replay path and TAR must be valid.')       
-                
-        if parsed_args.to_mss==None:
-            to_mss = False
-        elif parsed_args.to_mss[0].lower()=='true':
-            to_mss = True
-            #to_mss = False #Currently don't want things in MSS
-        elif parsed_args.to_mss[0].lower()=='false':
-            to_mss = False
-        else:
-            raise RuntimeError('to_mss must be True or False')
-
-        job['name'] =  wf_name + '_' + coda_stem + '.dat.' + str(run[2])
-        job['constraint'] = processConstraints(parsed_args.constraint)
-        job['name'] =  wf_name + '_' + coda_stem
-        job['inputs'] = [{}]
-        job['inputs'][0]['local'] = "nps_replay.tar.gz"
-        job['inputs'][0]['remote'] = specify_replay
-
-        #Running sum of disk space required, not ideal. Start off with 1GB (for replay)
-        tmp_disk=1000000000
-        if all_segs==True:
-            last_seg = run[2]+1
-            first_seg = 0
-            tmp_disk=20000000000*run[2] + 30000000000
-            for seg in range(first_seg,last_seg):
-                coda = os.path.join(nps_raw_dir, coda_stem + '.dat.' + str(seg))
-                if not os.path.isfile(coda):
-                    warnings.warn('RAW DATA: ' + coda + ' does not exist.')
-                inp={}
-                inp['local'] = os.path.basename(coda)
-                inp['remote'] = coda
-                job['inputs'].append(inp)
-        else:
-            #Specify file size as 20GB by hand, not ideal.
-            tmp_disk+=int(20000000000)
-            job['inputs'].append({})
-            job['inputs'][1]['local'] = os.path.basename(coda0)
-            job['inputs'][1]['remote'] = coda0
-            #print(coda0)
-            job['inputs'].append({})
-            job['inputs'][2]['local'] = os.path.basename(coda)
-            job['inputs'][2]['remote'] = coda
-            tmp_disk+=int(20000000000)
-            #print(coda)
-        if to_mss:
-            #DOES NOT WORK FOR EVERYTHING!!!
-            job['outputs'] = [{}]
-            if spectrometer.upper() == 'NPS_SKIM':
-                job['outputs'][0]['local'] = script_output % (int(run[0]), int(1), int(-1))
-                job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(1), int(-1))))
-            else:
-                job['outputs'][0]['local'] = script_output % (int(run[0]), int(run[2]), int(evts))
-                job['outputs'][0]['remote'] = tape_out + output_path + (os.path.basename(script_output % (int(run[0]), int(run[2]), int(evts))))
-        #This is for replay of all segments.
-        #job['disk_bytes'] = 
-        #This is for segment jobs.
-        #job['disk_bytes'] = 2*run[1] + 30000000000
-        job['disk_bytes'] = tmp_disk
-        #if spectrometer.upper()=='NPS_PROD':
-            #job['time_secs'] = int((run[2] / 6000 / 75)*1.2)
-        #elif spectrometer.upper()=='NPS_SCALER':
-            #job['time_secs'] = int((run[2] / 6000 / 500)*1.1)
-            
-
-        # command for job is `/hcswifdir/hcswif.sh REPLAY RUN NUMEVENTS`
-        if parsed_args.apptainer:
-             job['command'] = [" ".join([batch, replay_script, str(run), str(evts), str(parsed_args.apptainer[0]), str(raw_dir)])]
-        else:
-          job['command'] = [" ".join([batch, replay_script, str(run[0]), str(evts), str(run[2])])]
-     
-        jobs.append(copy.deepcopy(job))
-
-    return jobs
-
-#------------------------------------------------------------------------------
-def getReplayRuns(run_args, disk_args):
-    runs = []
-    disk = []
-    seg = []
-    antecedent = []
-    # User specified a file containing runs
-    if (run_args[0]=='file'):
-        filelist = run_args[1]
-        f = open(filelist,'r')
-        lines = f.readlines()
-
-        # We assume user has been smart enough to only specify valid run numbers
-        # or, at worst, lines only containing a \n
-        for line in lines:
-            splitted = line.split(" ")
-            if len(splitted) > 1:
-                run = splitted[0]
-                seg = splitted[1]
-                disk = splitted[2]
-            else:
-                run = line.strip('\n')
-                if disk_args==None:
-                    disk_bytes = 10000000000
-                    disk = int(disk_bytes)
-                else:
-                    disk = int(disk_args[0])
-                seg=''
-            if len(run)>0:
-                runs.append([int(run), int(disk), int(seg)])
-
-    # Arguments are either individual runs or ranges of runs. We check with a regex
-    else:
-        for arg in run_args:
-            # Is it a range? e.g. 2040-2055
-            if re.match('^\d+-\d+$', arg):
-                limits = re.split(r'-', arg)
-                first = int(limits[0])
-                last = int(limits[1]) + 1 # range(n,m) stops at m-1
-
-                for run in range(first, last):
-                    runs.append(run)
-
-            # Is it a single run? e.g. 2049
-            elif re.match('^\d+$', arg):
-                runs.append(int(arg))
-
-            # Else, invalid argument so we warn and skip it
-            else:
-                warnings.warn('Invalid run argument: ' + arg)
-
-    return runs
-
-#------------------------------------------------------------------------------
-def processConstraints(swif2_constraints):
-    #Constraints will come in an array if entered with space separations.
-    if swif2_constraints == None:
-        return "el9"
-    else:
-        return ','.join(swif2_constraints)
-    return "el9"
-
-
-    #------------------------------------------------------------------------------
-def getCommandJobs(parsed_args, wf_name):
-    print("Broken for non-PATTERN filelist input...\n See code!")
-    # command for job should have been specified by user
-    if parsed_args.command==None:
-        raise RuntimeError('Must specify command for batch job')
-
-    jobs = []
-    commands = []
-
-    # User specified a text file containing commands
-    if (parsed_args.command[0]=='file'):
-        filelist = parsed_args.command[1]
-        f = open(filelist,'r')
-        lines = f.readlines()
-
-        # We assume user has been smart enough to only specify valid commands
-        # or, at worst, lines only containing a \n
-        for line in lines:
-            cmd = line.strip('\n')
-            if len(cmd)>0:
-                commands.append(cmd)
-
-    # Otherwise user only specified one command, which may or may not have arguments.
-    # join() works in either case.
-    else:
-        cmd = ' '.join(str(element) for element in parsed_args.command)
-        commands.append(cmd)
-
-    for cmd in commands:
-        job = {}
-        job['name'] = wf_name + '_job' + str(len(jobs))
-
-        job['command'] = [cmd]
-
-        # Add any necessary files from tape
-        if parsed_args.filelist==None:
-            warnings.warn('No file list specified. Assuming your shell script has any necessary jgets')
-        else:
-            filelist = parsed_args.filelist[0]
-            f = open(filelist,'r')
-            lines = f.readlines()
-            line0 = lines[0].split(" ")
-            lines = lines[1:]
-            if('PATTERN' in line0[0]):
-                # Broken for non-PATTERN filelist input...
-                # Which parameter of the command would we like to pattern off of?
-                parameter = line0[1] # Typically this is the run number.
-                cmd_options = cmd.split(" ")
-                param = cmd_options[int(parameter)]
-            # We assume user has been smart enough to only specify valid files
-            # or, at worst, lines only containing a \n
-            job['inputs'] = []
-            for line in lines:
-                filename = line.strip('\n')
-                filename = filename.format(param=param)
-                if len(filename)>0:
-                    if not os.path.isfile(filename):
-                        warnings.warn('RAW DATA: ' + filename + ' does not exist')
-                    inp={}
-                    inp['local'] = os.path.basename(filename)
-                    inp['remote'] = filename
-                    job['inputs'].append(inp)
-
-        jobs.append(copy.deepcopy(job))
-
-    return jobs
-
-#------------------------------------------------------------------------------
 def addCommonJobInfo(workflow, parsed_args):
-    # Account
-    # TODO: Remove default?
-    if parsed_args.account==None:
+    # Set account
+    if parsed_args.account is None:
         warnings.warn('No account specified.')
-
-        account_prompt = 'x'
-        while account_prompt.lower() not in ['y', 'n', 'yes', 'no']:
-            account_prompt = input('Should I use account=hallc? (y/n): ')
-
+        # Prompt user interactively if needed
+        account_prompt = input('Should I use account=hallc? (y/n): ')
         if account_prompt.lower() in ['y', 'yes']:
             account = 'hallc'
         else:
@@ -526,67 +207,302 @@ def addCommonJobInfo(workflow, parsed_args):
     else:
         account = parsed_args.account[0]
 
-    # Disk space in bytes
-    if parsed_args.disk==None:
-        disk_bytes = 10000000000
-    else:
-        disk_bytes = int(parsed_args.disk[0])
+    # Use configuration defaults if arguments are not provided
+    disk_bytes = int(parsed_args.disk[0]) if parsed_args.disk else Config.DEFAULTS['disk_bytes']
+    ram_bytes = int(parsed_args.ram[0]) if parsed_args.ram else Config.DEFAULTS['ram_bytes']
+    cpu = int(parsed_args.cpu[0]) if parsed_args.cpu else Config.DEFAULTS['cpu']
+    time_secs = int(parsed_args.time[0]) if parsed_args.time else Config.DEFAULTS['time_secs']
+    shell = shutil.which(parsed_args.shell[0]) if parsed_args.shell else shutil.which('bash')
 
-    # RAM in bytes
-    if parsed_args.ram==None:
-        ram_bytes = 2500000000
-    else:
-        ram_bytes = int(parsed_args.ram[0])
-
-    # CPUs
-    if parsed_args.cpu==None:
-        cpu = 1
-    else:
-        cpu = int(parsed_args.cpu[0])
-
-    # Max time in seconds before killing jobs
-    if parsed_args.time==None:
-        time = 14400
-    else:
-        time = int(parsed_args.time[0])
-
-    # Shell
-    if parsed_args.shell==None:
-        shell = shutil.which('bash')
-    else:
-        shell = shutil.which(parsed_args.shell[0])
-
-    # Loop over jobs and add info
-    for n in range(0, len(workflow['jobs'])):
-        job = copy.deepcopy(workflow['jobs'][n])
-
+    for n, job in enumerate(workflow['jobs']):
         job['account'] = account
-
-        job['stdout'] = os.path.join(std_out, job['name'] + '.out')
-        job['stderr'] = os.path.join(std_err, job['name'] + '.err')
-
-        # TODO: Allow user to specify all of these parameters
+        job['stdout'] = os.path.join(Config.BASE_DIRS['std_out'], job['name'] + '.out')
+        job['stderr'] = os.path.join(Config.BASE_DIRS['std_err'], job['name'] + '.err')
         job['constraint'] = processConstraints(parsed_args.constraint)
-        job['partition'] = 'production'
-        #job['disk_bytes'] = disk_bytes
+        job['partition'] = Config.DEFAULTS['partition']
         job['ram_bytes'] = ram_bytes
         job['cpu_cores'] = cpu
-        if parsed_args.time!=None:
-            job['time_secs'] = time
-
+        if parsed_args.time:
+            job['time_secs'] = time_secs
         workflow['jobs'][n] = copy.deepcopy(job)
-        job.clear()
-
     return workflow
 
-#------------------------------------------------------------------------------
+
+def getWorkflow(parsed_args):
+    workflow = initializeWorkflow(parsed_args)
+    outfile = os.path.join(Config.BASE_DIRS['json_dir'], workflow['name'] + '.json')
+    mode = parsed_args.mode[0].lower() if parsed_args.mode else None
+
+    if mode == 'replay':
+        workflow['jobs'] = getReplayJobs(parsed_args, workflow['name'])
+    elif mode == 'command':
+        workflow['jobs'] = getCommandJobs(parsed_args, workflow['name'])
+    else:
+        raise ValueError('Mode must be replay or command')
+
+    workflow = addCommonJobInfo(workflow, parsed_args)
+    return workflow, outfile
+
+
+def processConstraints(constraints):
+    if constraints is None:
+        return Config.DEFAULTS['constraint']
+    else:
+        return ','.join(constraints)
+
+
+#--------------------------------------------------------------------
+# New helper function to compute disk space and set up input files for raw data
+def prepare_raw_inputs(raw_dir, coda_stem, run, all_segs):
+    """
+    Computes required disk space and builds input file entries for raw data.
+    
+    Returns:
+        inputs: List of input file dictionaries.
+        disk_bytes: Total disk space (in bytes) estimated.
+    """
+    inputs = []
+    disk = Config.DISK_SPECS["base_disk"]
+    
+    if all_segs:
+        last_seg = run[2] + 1
+        # Disk calculation: base multiplier times number of segments plus an offset
+        disk = Config.DISK_SPECS["all_segs_multiplier"] * run[2] + Config.DISK_SPECS["all_segs_offset"]
+        for seg in range(0, last_seg):
+            seg_file = os.path.join(raw_dir, f"{coda_stem}.dat.{seg}")
+            if not os.path.isfile(seg_file):
+                warnings.warn('RAW DATA missing: ' + seg_file)
+            inputs.append({
+                'local': os.path.basename(seg_file),
+                'remote': seg_file
+            })
+    else:
+        # For non-all_segs mode, add two specific segments (0 and the current seg)
+        disk += Config.DISK_SPECS["non_all_segs"]
+        coda0 = os.path.join(raw_dir, f"{coda_stem}.dat.0")
+        coda  = os.path.join(raw_dir, f"{coda_stem}.dat.{run[2]}")
+        inputs.append({
+            'local': os.path.basename(coda0),
+            'remote': coda0
+        })
+        inputs.append({
+            'local': os.path.basename(coda),
+            'remote': coda
+        })
+        disk += Config.DISK_SPECS["non_all_segs"]
+    return inputs, disk
+
+#--------------------------------------------------------------------
+# Updated getReplayJobs function
+def getReplayJobs(parsed_args, wf_name):
+    # Validate spectrometer option
+    spectrometer = parsed_args.spectrometer[0]
+    valid_specs = list(Config.REPLAY_SCRIPTS.keys())
+    if spectrometer.upper() not in valid_specs:
+        raise ValueError('Spectrometer must be one of: ' + ', '.join(valid_specs))
+    
+    # Process run numbers
+    if parsed_args.run is None:
+        raise RuntimeError('Must specify run(s) to process')
+    runs = getReplayRuns(parsed_args.run, parsed_args.disk)
+    
+    # Choose replay script (either user-specified or default)
+    replay_script = parsed_args.replay[0] if parsed_args.replay else Config.REPLAY_SCRIPTS[spectrometer.upper()]
+    
+    # Number of events
+    if parsed_args.events is None:
+        warnings.warn('No events specified. Analyzing all events.')
+        evts = Config.DEFAULTS['events']
+    else:
+        evts = parsed_args.events[0]
+    
+    # Determine all_segs flag
+    if parsed_args.all_segs is None:
+        all_segs = False
+    elif parsed_args.all_segs[0].lower() in ['true']:
+        all_segs = True
+    elif parsed_args.all_segs[0].lower() in ['false']:
+        all_segs = False
+    else:
+        raise RuntimeError('all_segs must be True or False')
+    
+    # Select the proper batch script based on shell and all_segs options
+    hcswif_dir = os.path.dirname(os.path.realpath(__file__))
+    if parsed_args.shell is None:
+        batch = os.path.join(hcswif_dir, 'hcswif2_all_segs.sh' if all_segs else 'hcswif2.sh')
+    elif re.search('bash', parsed_args.shell[0]):
+        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
+    elif re.search('csh', parsed_args.shell[0]):
+        batch = os.path.join(hcswif_dir, 'hcswif.csh')
+    else:
+        batch = os.path.join(hcswif_dir, 'hcswif2.sh')
+    
+    if parsed_args.apptainer:
+        if not os.path.isdir(str(parsed_args.apptainer[0])):
+            warnings.warn("APPTAINER image not found.")
+            sys.exit(1)
+        batch = os.path.join(hcswif_dir, "hcswif_apptainer.sh")
+    
+    jobs = []
+    raw_dir = Config.RAW_DIRS['nps']
+    
+    for run in runs:
+        job = {}
+        # Build coda stem; customize as needed for different spectrometer types
+        coda_stem = 'nps_coin_' + str(run[0]).zfill(4)
+        
+        # Prepare raw data inputs and disk space calculation via helper function
+        inputs, disk_bytes = prepare_raw_inputs(raw_dir, coda_stem, run, all_segs)
+        job['inputs'] = [{
+            'local': "nps_replay.tar.gz",
+            'remote': (parsed_args.specify_replay[0]
+                       if parsed_args.specify_replay
+                       else Config.DEFAULT_REPLAY_TAR)
+        }]
+        # Append raw data inputs
+        job['inputs'].extend(inputs)
+        job['disk_bytes'] = disk_bytes
+        
+        # Configure output formatting if writing to MSS
+        # The output format and path are defined in the Config section
+        script_output = Config.OUTPUT_FORMATS[spectrometer.upper()]
+        output_path = Config.OUTPUT_PATHS[spectrometer.upper()]
+        if parsed_args.to_mss is None:
+            to_mss = Config.TO_MSS_DEFAULT
+        elif parsed_args.to_mss[0].lower() in ['true']:
+            to_mss = True
+        elif parsed_args.to_mss[0].lower() in ['false']:
+            to_mss = False
+        else:
+            raise RuntimeError('to_mss must be True or False')
+        
+        if to_mss:
+            job['outputs'] = [{}]
+            if spectrometer.upper() == 'NPS_SKIM':
+                local_name = script_output % (int(run[0]), 1, -1)
+            else:
+                local_name = script_output % (int(run[0]), int(run[2]), int(evts))
+            job['outputs'][0]['local'] = local_name
+            job['outputs'][0]['remote'] = os.path.join(Config.BASE_DIRS['tape_out'], output_path, os.path.basename(local_name))
+        
+        # Create a unique job name
+        job['name'] = wf_name + '_' + coda_stem
+        job['constraint'] = processConstraints(parsed_args.constraint)
+        
+        # Construct the job command
+        if parsed_args.apptainer:
+            job['command'] = [" ".join([batch, replay_script, str(run), str(evts),
+                                         str(parsed_args.apptainer[0]), str(raw_dir)])]
+        else:
+            job['command'] = [" ".join([batch, replay_script, str(run[0]), str(evts), str(run[2])])]
+        
+        jobs.append(copy.deepcopy(job))
+    
+    return jobs
+
+def getReplayRuns(run_args, disk_args):
+    """Parses run arguments which can be either a list of runs/ranges or a file input."""
+    runs = []
+    # If the user provided a file, the first argument is 'file'
+    if run_args[0] == 'file':
+        filelist = run_args[1]
+        with open(filelist, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            splitted = line.split()
+            if len(splitted) > 1:
+                run = splitted[0]
+                seg = splitted[1]
+                disk = splitted[2]
+            else:
+                run = line.strip()
+                disk = disk_args[0] if disk_args else Config.DEFAULTS['disk_bytes']
+                seg = ''
+            if run:
+                runs.append([int(run), int(disk), int(seg)])
+    else:
+        for arg in run_args:
+            if re.match('^\d+-\d+$', arg):
+                first, last = map(int, arg.split('-'))
+                for run in range(first, last + 1):
+                    # For range jobs we assume a default segment value of 0
+                    runs.append([run, Config.DEFAULTS['disk_bytes'], 0])
+            elif re.match('^\d+$', arg):
+                runs.append([int(arg), Config.DEFAULTS['disk_bytes'], 0])
+            else:
+                warnings.warn('Invalid run argument: ' + arg)
+    return runs
+
+
+#--------------------------------------------------------------------
+# Command job functions (refactored similarly)
+def getCommandJobs(parsed_args, wf_name):
+    print("Command mode is not fully implemented. Please see the code!")
+    if parsed_args.command is None:
+        raise RuntimeError('Must specify command for batch job')
+
+    jobs = []
+    commands = []
+    if parsed_args.command[0] == 'file':
+        filelist = parsed_args.command[1]
+        with open(filelist, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            cmd = line.strip()
+            if cmd:
+                commands.append(cmd)
+    else:
+        commands.append(' '.join(parsed_args.command))
+
+    for cmd in commands:
+        job = {}
+        job['name'] = wf_name + '_job' + str(len(jobs))
+        job['command'] = [cmd]
+        # Process file inputs if specified
+        if parsed_args.filelist is None:
+            warnings.warn('No file list specified. Assuming your shell script handles necessary file transfers.')
+        else:
+            filelist = parsed_args.filelist[0]
+            with open(filelist, 'r') as f:
+                lines = f.readlines()
+            # Example: if the file list has a header with PATTERN information.
+            if lines:
+                header = lines[0].split()
+                if 'PATTERN' in header[0]:
+                    parameter = header[1]
+                    cmd_options = cmd.split()
+                    param = cmd_options[int(parameter)]
+                else:
+                    param = None
+            job['inputs'] = []
+            for line in lines[1:]:
+                filename = line.strip()
+                if param:
+                    filename = filename.format(param=param)
+                if filename and not os.path.isfile(filename):
+                    warnings.warn('RAW DATA: ' + filename + ' does not exist')
+                job['inputs'].append({
+                    'local': os.path.basename(filename),
+                    'remote': filename
+                })
+        jobs.append(copy.deepcopy(job))
+    return jobs
+
+
 def writeWorkflow(workflow, outfile):
     with open(outfile, 'w') as f:
         json.dump(workflow, f, sort_keys=True, indent=2, separators=(',', ': '))
+    print('Wrote workflow to:', outfile)
 
-    print('Wrote: ' + outfile)
-    return
 
-#------------------------------------------------------------------------------
+#--------------------------------------------------------------------
+def main():
+    # Only check directories if the help flag is not present.
+    if not any(flag in sys.argv for flag in ['-h', '--help']):
+        check_directories()
+    parsed_args = parseArgs()
+    workflow, outfile = getWorkflow(parsed_args)
+    writeWorkflow(workflow, outfile)
+
 if __name__ == "__main__":
     main()
